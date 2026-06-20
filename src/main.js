@@ -84,8 +84,13 @@ function villageNorm(str) {
 async function fetchVillageHits(cinemaId, date) {
   const params = new URLSearchParams({ 'f.c': cinemaId })
   if (date) params.set('f.d', date)
+  const url = `${VILLAGE_BASE}/api/algolia/sessions/hits?${params}`
   try {
-    const r = await fetch(`${VILLAGE_BASE}/api/algolia/sessions/hits?${params}`)
+    let r = await fetch(url)
+    // Village Next.js routes sometimes only accept POST
+    if (r.status === 405) {
+      r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+    }
     if (!r.ok) return []
     const d = await r.json()
     const hits = d.hits || []
@@ -660,8 +665,12 @@ async function loadVillageCinemaList() {
   state.villageCinemaListError = false
   if (state.view === 'settings') render()
   try {
-    // Fetched client-side so user's IP bypasses Cloudflare (Vercel IPs are blocked)
-    const r = await fetch(`${VILLAGE_BASE}/api/booking-widget/filters`)
+    // Fetched client-side (Vercel IPs blocked by Cloudflare). Village requires POST.
+    const r = await fetch(`${VILLAGE_BASE}/api/booking-widget/filters`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
     if (!r.ok) throw new Error(`${r.status}`)
     const data = await r.json()
     state.villageCinemaList = (data.cinemas || [])

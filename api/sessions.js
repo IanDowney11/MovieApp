@@ -12,7 +12,7 @@ const VILLAGE_BASE = 'https://villagecinemas.com.au'
 function villageScraperUrl(targetUrl) {
   const key = process.env.SCRAPERAPI_KEY
   if (!key) throw new Error('SCRAPERAPI_KEY not configured')
-  return `https://api.scraperapi.com/?api_key=${key}&url=${encodeURIComponent(targetUrl)}&premium=true`
+  return `https://api.scraperapi.com/?api_key=${key}&url=${encodeURIComponent(targetUrl)}&ultra_premium=true`
 }
 
 function formatVillageTime(isoString) {

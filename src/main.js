@@ -64,6 +64,107 @@ function getMovieSessionsFromHome(movie) {
   return sessions.length ? sessions : null
 }
 
+// ---- VILLAGE (client-side — Cloudflare blocks Vercel IPs) ----
+
+const VILLAGE_BASE = 'https://villagecinemas.com.au'
+
+function formatVillageTime(isoString) {
+  if (!isoString) return ''
+  const timePart = isoString.split('T')[1] || ''
+  const [h, m] = timePart.split(':').map(Number)
+  const period = h >= 12 ? 'PM' : 'AM'
+  const hour = h % 12 || 12
+  return `${hour}:${String(m).padStart(2, '0')} ${period}`
+}
+
+function villageNorm(str) {
+  return (str || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').trim()
+}
+
+async function fetchVillageHits(cinemaId, date) {
+  const params = new URLSearchParams({ 'f.c': cinemaId })
+  if (date) params.set('f.d', date)
+  try {
+    const r = await fetch(`${VILLAGE_BASE}/api/algolia/sessions/hits?${params}`)
+    if (!r.ok) return []
+    const d = await r.json()
+    const hits = d.hits || []
+    return date ? hits.filter(h => h.date === date) : hits
+  } catch { return [] }
+}
+
+async function fetchAllVillageSessionsClient(date, cinemaIds) {
+  const allHits = (await Promise.all(cinemaIds.map(id => fetchVillageHits(id, date)))).flat()
+  if (!allHits.length) return []
+
+  const movieMap = {}
+  for (const hit of allHits) {
+    const hoCode = hit.movie?.movieHoCode
+    if (!hoCode) continue
+    if (!movieMap[hoCode]) {
+      movieMap[hoCode] = {
+        name: hit.movie.title,
+        hoCode,
+        rating: (hit.movie.classification?.description || '').trim(),
+        posterUrl: hit.movie.poster?.image?.url || null,
+        chain: 'village',
+        locMap: {},
+      }
+    }
+    const key = hit.cinema.cinemaId
+    if (!movieMap[hoCode].locMap[key]) {
+      movieMap[hoCode].locMap[key] = { cinema: hit.cinema.name, times: [] }
+    }
+    movieMap[hoCode].locMap[key].times.push({
+      time: formatVillageTime(hit.showtime),
+      bookingUrl: `${VILLAGE_BASE}/sessions/${hit.sessionId}`,
+      _iso: hit.showtime,
+    })
+  }
+
+  return Object.values(movieMap).map(m => ({
+    name: m.name,
+    hoCode: m.hoCode,
+    rating: m.rating,
+    posterUrl: m.posterUrl,
+    chain: 'village',
+    locations: Object.values(m.locMap).map(loc => ({
+      cinema: loc.cinema,
+      times: loc.times
+        .sort((a, b) => a._iso.localeCompare(b._iso))
+        .map(({ time, bookingUrl }) => ({ time, bookingUrl })),
+    })),
+  }))
+}
+
+async function fetchVillageSessionsClient(movieTitle, date, cinemaIds) {
+  const allHits = (await Promise.all(cinemaIds.map(id => fetchVillageHits(id, date)))).flat()
+  const nb = villageNorm(movieTitle)
+  const matching = allHits.filter(h => {
+    const na = villageNorm(h.movie?.title)
+    return na === nb || (nb.length > 2 && (na.startsWith(nb) || nb.startsWith(na)))
+  })
+  if (!matching.length) return []
+
+  const locMap = {}
+  for (const hit of matching) {
+    const key = hit.cinema.cinemaId
+    if (!locMap[key]) locMap[key] = { cinema: hit.cinema.name, times: [] }
+    locMap[key].times.push({
+      time: formatVillageTime(hit.showtime),
+      bookingUrl: `${VILLAGE_BASE}/sessions/${hit.sessionId}`,
+      _iso: hit.showtime,
+    })
+  }
+
+  return Object.values(locMap).map(loc => ({
+    cinema: loc.cinema,
+    times: loc.times
+      .sort((a, b) => a._iso.localeCompare(b._iso))
+      .map(({ time, bookingUrl }) => ({ time, bookingUrl })),
+  }))
+}
+
 // ---- ICONS ----
 
 const ICON_SETTINGS = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`
@@ -481,17 +582,22 @@ async function loadMovies() {
       const dateOffset = state.selectedDate === 'today' ? 0 : 1
       const date = isoDate(dateOffset)
 
-      const params = new URLSearchParams({ date })
-      if (hoytsCinemaIds.length)  params.set('hoytsCinemaIds',  hoytsCinemaIds.join(','))
-      if (villageCinemaIds.length) params.set('villageCinemaIds', villageCinemaIds.join(','))
+      // Hoyts: server-side API (needs custom headers); Village: client-side (Cloudflare blocks Vercel)
+      const [hoytsData, villageByMovie] = await Promise.all([
+        hoytsCinemaIds.length
+          ? fetch(`/api/sessions?${new URLSearchParams({ date, hoytsCinemaIds: hoytsCinemaIds.join(',') })}`)
+              .then(r => r.ok ? r.json() : { byMovie: [] })
+          : Promise.resolve({ byMovie: [] }),
+        villageCinemaIds.length
+          ? fetchAllVillageSessionsClient(date, villageCinemaIds)
+          : Promise.resolve([]),
+      ])
 
-      const res = await fetch(`/api/sessions?${params}`)
-      if (!res.ok) throw new Error('Could not load cinema sessions')
-      const data = await res.json()
+      if (!hoytsCinemaIds.length && !villageCinemaIds.length) throw new Error('No cinemas selected')
 
       // Merge by title across chains, filter to G/PG using chain-provided rating
       const titleMap = {}
-      for (const m of (data.byMovie || [])) {
+      for (const m of [...(hoytsData.byMovie || []), ...villageByMovie]) {
         const key = (m.name || '').toLowerCase().trim()
         if (!titleMap[key]) titleMap[key] = { name: m.name, rating: '', hoyts: null, village: null }
         if (m.chain === 'hoyts')   titleMap[key].hoyts   = m
@@ -554,10 +660,14 @@ async function loadVillageCinemaList() {
   state.villageCinemaListError = false
   if (state.view === 'settings') render()
   try {
-    const res = await fetch('/api/village-cinemas')
-    if (!res.ok) throw new Error()
-    const data = await res.json()
-    state.villageCinemaList = data.cinemas || []
+    // Fetched client-side so user's IP bypasses Cloudflare (Vercel IPs are blocked)
+    const r = await fetch(`${VILLAGE_BASE}/api/booking-widget/filters`)
+    if (!r.ok) throw new Error(`${r.status}`)
+    const data = await r.json()
+    state.villageCinemaList = (data.cinemas || [])
+      .filter(c => c.state === 'VIC')
+      .map(c => ({ id: c.cinemaId, name: c.name, suburb: c.suburb }))
+      .sort((a, b) => a.name.localeCompare(b.name))
   } catch {
     state.villageCinemaListError = true
     state.villageCinemaList = null
@@ -593,16 +703,21 @@ async function loadSessions(movie) {
   const date = isoDate(dateOffset)
 
   try {
-    const params = new URLSearchParams({ movieTitle: movie.title, date })
-    if (hoytsCinemaIds.length)  params.set('hoytsCinemaIds',  hoytsCinemaIds.join(','))
-    if (villageCinemaIds.length) params.set('villageCinemaIds', villageCinemaIds.join(','))
-
-    const res = await fetch(`/api/sessions?${params}`)
-    if (!res.ok) throw new Error()
-    const data = await res.json()
+    const [hoytsData, villageSessions] = await Promise.all([
+      hoytsCinemaIds.length
+        ? fetch(`/api/sessions?${new URLSearchParams({ movieTitle: movie.title, date, hoytsCinemaIds: hoytsCinemaIds.join(',') })}`)
+            .then(r => r.ok ? r.json() : { sessions: { hoyts: [] } })
+        : Promise.resolve({ sessions: { hoyts: [] } }),
+      villageCinemaIds.length
+        ? fetchVillageSessionsClient(movie.title, date, villageCinemaIds)
+        : Promise.resolve([]),
+    ])
 
     if (state.selectedMovie?.id === movie.id) {
-      state.sessions = data.sessions
+      state.sessions = {
+        hoyts: hoytsData.sessions?.hoyts || [],
+        village: villageSessions,
+      }
       state.sessionsLoading = false
       if (state.view === 'detail') render()
     }

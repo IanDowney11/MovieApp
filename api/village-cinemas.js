@@ -1,56 +1,42 @@
 const VILLAGE_BASE = 'https://villagecinemas.com.au'
 
-export default async function handler(req, res) {
-  const { debug } = req.query
+function scraperUrl(targetUrl) {
+  const key = process.env.SCRAPERAPI_KEY
+  if (!key) throw new Error('SCRAPERAPI_KEY not configured')
+  return `https://api.scraperapi.com/?api_key=${key}&url=${encodeURIComponent(targetUrl)}`
+}
 
-  // Try plain fetch first (some APIs block when Origin/Referer look like scrapers)
-  const headers = {
-    Accept: 'application/json, text/plain, */*',
-    'User-Agent':
-      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+export default async function handler(req, res) {
+  if (!process.env.SCRAPERAPI_KEY) {
+    return res.status(503).json({ error: 'SCRAPERAPI_KEY environment variable not set' })
   }
 
-  const url = `${VILLAGE_BASE}/api/booking-widget/filters`
   let r
   try {
-    r = await fetch(url, { headers })
+    // Village's filters endpoint requires POST
+    r = await fetch(scraperUrl(`${VILLAGE_BASE}/api/booking-widget/filters`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
   } catch (err) {
-    return res.status(502).json({ error: 'Network error fetching Village cinemas', detail: String(err) })
-  }
-
-  if (debug === '1') {
-    const text = await r.text()
-    res.setHeader('Content-Type', 'application/json')
-    return res.status(200).send(JSON.stringify({
-      status: r.status,
-      ok: r.ok,
-      contentType: r.headers.get('content-type'),
-      bodyPreview: text.slice(0, 2000),
-    }))
+    return res.status(502).json({ error: 'Failed to reach Village via proxy', detail: String(err) })
   }
 
   if (!r.ok) {
-    return res.status(502).json({
-      error: 'Failed to fetch Village cinemas',
-      status: r.status,
-      contentType: r.headers.get('content-type'),
-    })
+    return res.status(502).json({ error: 'Village API error', status: r.status })
   }
 
   let data
   try {
     data = await r.json()
   } catch {
-    return res.status(502).json({ error: 'Village API returned non-JSON response' })
+    return res.status(502).json({ error: 'Village API returned non-JSON' })
   }
 
   const victorian = (data.cinemas || [])
     .filter(c => c.state === 'VIC')
-    .map(c => ({
-      id: c.cinemaId,
-      name: c.name,
-      suburb: c.suburb,
-    }))
+    .map(c => ({ id: c.cinemaId, name: c.name, suburb: c.suburb }))
     .sort((a, b) => a.name.localeCompare(b.name))
 
   res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=7200')

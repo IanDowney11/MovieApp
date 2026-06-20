@@ -8,12 +8,11 @@ const HOYTS_HEADERS = {
 }
 
 const VILLAGE_BASE = 'https://villagecinemas.com.au'
-const VILLAGE_HEADERS = {
-  Accept: 'application/json',
-  Origin: 'https://villagecinemas.com.au',
-  Referer: 'https://villagecinemas.com.au/',
-  'User-Agent':
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+
+function villageScraperUrl(targetUrl) {
+  const key = process.env.SCRAPERAPI_KEY
+  if (!key) throw new Error('SCRAPERAPI_KEY not configured')
+  return `https://api.scraperapi.com/?api_key=${key}&url=${encodeURIComponent(targetUrl)}`
 }
 
 function formatVillageTime(isoString) {
@@ -29,12 +28,14 @@ function formatVillageTime(isoString) {
 async function fetchVillageHits(cinemaId, date) {
   const params = new URLSearchParams({ 'f.c': cinemaId })
   if (date) params.set('f.d', date)
-  const r = await fetch(`${VILLAGE_BASE}/api/algolia/sessions/hits?${params}`, { headers: VILLAGE_HEADERS })
-  if (!r.ok) return []
-  const d = await r.json()
-  const hits = d.hits || []
-  // Filter by date client-side as fallback in case f.d isn't supported
-  return date ? hits.filter(h => h.date === date) : hits
+  const targetUrl = `${VILLAGE_BASE}/api/algolia/sessions/hits?${params}`
+  try {
+    const r = await fetch(villageScraperUrl(targetUrl))
+    if (!r.ok) return []
+    const d = await r.json()
+    const hits = d.hits || []
+    return date ? hits.filter(h => h.date === date) : hits
+  } catch { return [] }
 }
 
 async function fetchAllVillageSessions(date, cinemaIds) {

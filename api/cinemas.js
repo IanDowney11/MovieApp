@@ -26,6 +26,7 @@ export default async function handler(req, res) {
       id: String(c.id),
       name: c.name || 'Unknown',
       suburb: c.suburb || c.address?.suburb || '',
+      code: c.code || c.cinemaCode || c.shortCode || c.slug || '',
     }))
     .sort((a, b) => a.name.localeCompare(b.name))
 

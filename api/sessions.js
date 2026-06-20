@@ -203,20 +203,29 @@ export default async function handler(req, res) {
     const data = await fetchHoytsData(cinemaIds)
     if (!data) return res.status(502).json({ error: 'Hoyts fetch failed' })
     const { cinemas, movies, sessions } = data
-    const cinemaIdSet = new Set(cinemas.map(c => String(c.id)))
-    const daySessions = sessions.filter(s =>
-      !s.disabled && cinemaIdSet.has(String(s.cinemaId)) &&
-      (!date || (s.date || '').substring(0, 10) === date)
-    )
-    const movieIdsWithSessions = new Set(daySessions.map(s => String(s.movieId)))
+
+    // Show raw unfiltered sessions so we can inspect their structure
+    const sampleSession = sessions[0] || null
+    const sessionKeys = sampleSession ? Object.keys(sampleSession) : []
+
+    // Try date filter with whatever key looks like a date
+    const dateKey = sessionKeys.find(k => typeof sampleSession?.[k] === 'string' && sampleSession[k].match(/^\d{4}-\d{2}-\d{2}/))
+    const filteredByDate = date && dateKey
+      ? sessions.filter(s => (s[dateKey] || '').substring(0, 10) === date)
+      : sessions
+
+    const movieIdsWithSessions = new Set(filteredByDate.map(s => String(s.movieId)))
+
     return res.json({
       selectedCinemas: cinemas.map(c => ({ id: c.id, name: c.name })),
-      totalSessions: daySessions.length,
-      moviesWithSessions: movies
+      rawSessionCount: sessions.length,
+      filteredSessionCount: filteredByDate.length,
+      detectedDateKey: dateKey || null,
+      sampleSession,
+      moviesOnDate: movies
         .filter(m => movieIdsWithSessions.has(String(m.vistaId || m.id)))
-        .map(m => ({ id: m.id, vistaId: m.vistaId, name: m.name, classification: m.classification })),
+        .map(m => ({ id: m.id, vistaId: m.vistaId, name: m.name })),
       allMovieCount: movies.length,
-      sampleSession: daySessions[0] || null,
     })
   }
 

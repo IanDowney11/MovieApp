@@ -7,6 +7,14 @@ const HOYTS_HEADERS = {
     'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
 }
 
+// vistaId can be a comma-separated list e.g. "HO00008574,HO00011215"
+function getMovieIds(movie) {
+  const raw = movie.vistaId || ''
+  const ids = raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : []
+  if (!ids.length && movie.id) ids.push(String(movie.id))
+  return ids
+}
+
 function normalise(str) {
   return str.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim()
 }
@@ -76,11 +84,12 @@ async function fetchHoytsSessions(movieTitle, date, cinemaIds) {
     const matchedMovie = movies.find(m => titlesMatch(m.name, movieTitle))
     if (!matchedMovie) return []
 
-    const vistaId = matchedMovie.vistaId || matchedMovie.id
-    if (!vistaId) return []
+    const movieIds = getMovieIds(matchedMovie)
+    if (!movieIds.length) return []
+    const movieIdSet = new Set(movieIds)
 
     const matchingSessions = sessions.filter(s =>
-      String(s.movieId) === String(vistaId) &&
+      movieIdSet.has(String(s.movieId)) &&
       cinemaIdSet.has(String(s.cinemaId)) &&
       !s.disabled &&
       (s.date || '').substring(0, 10) === date
@@ -131,10 +140,11 @@ async function fetchAllHoytsSessions(date, cinemaIds) {
 
     const results = []
     for (const movie of movies) {
-      const movieId = movie.vistaId || movie.id
-      if (!movieId) continue
+      const movieIds = getMovieIds(movie)
+      if (!movieIds.length) continue
 
-      const movieSessions = daySessions.filter(s => String(s.movieId) === String(movieId))
+      const idSet = new Set(movieIds)
+      const movieSessions = daySessions.filter(s => idSet.has(String(s.movieId)))
       if (movieSessions.length === 0) continue
 
       const locMap = {}
@@ -156,7 +166,7 @@ async function fetchAllHoytsSessions(date, cinemaIds) {
 
       results.push({
         name: movie.name,
-        vistaId: String(movieId),
+        vistaId: movieIds[0],
         classification: movie.classification || '',
         chain: 'hoyts',
         locations: Object.values(locMap).map(loc => ({
@@ -239,7 +249,7 @@ export default async function handler(req, res) {
       detectedDateKey: dateKey || null,
       sampleSession,
       moviesOnDate: movies
-        .filter(m => movieIdsWithSessions.has(String(m.vistaId || m.id)))
+        .filter(m => getMovieIds(m).some(id => movieIdsWithSessions.has(id)))
         .map(m => ({ id: m.id, vistaId: m.vistaId, name: m.name })),
       allMovieCount: movies.length,
     })

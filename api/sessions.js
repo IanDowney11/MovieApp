@@ -199,6 +199,20 @@ export default async function handler(req, res) {
 
   res.setHeader('Cache-Control', 'no-store')
 
+  // Raw proxy — show exactly what Hoyts returns for the cinema session endpoint
+  if (debug === 'raw') {
+    const code = cinemaIds[0]
+    const r = await fetch(`${HOYTS_BASE}/sessions/${code}`, { headers: HOYTS_HEADERS })
+    const text = await r.text()
+    res.setHeader('Content-Type', 'application/json')
+    return res.status(200).send(JSON.stringify({
+      status: r.status,
+      ok: r.ok,
+      url: `${HOYTS_BASE}/sessions/${code}`,
+      responsePreview: text.slice(0, 2000),
+    }))
+  }
+
   if (debug === '1') {
     const data = await fetchHoytsData(cinemaIds)
     if (!data) return res.status(502).json({ error: 'Hoyts fetch failed' })

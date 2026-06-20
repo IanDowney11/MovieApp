@@ -1,5 +1,5 @@
 import { store } from './store.js'
-import { CINEMAS, getCinemaById } from './cinemas.js'
+import { CINEMAS } from './cinemas.js'
 import { getNowPlayingKidsMovies, getMovieDetails, getPosterUrl, searchAndEnrichFromTMDB } from './api.js'
 
 // ---- STATE ----
@@ -15,9 +15,12 @@ const state = {
   detailLoading: false,
   sessions: null,
   sessionsLoading: false,
-  cinemaList: null,
-  cinemaListLoading: false,
-  cinemaListError: false,
+  hoytsCinemaList: null,
+  hoytsCinemaListLoading: false,
+  hoytsCinemaListError: false,
+  villageCinemaList: null,
+  villageCinemaListLoading: false,
+  villageCinemaListError: false,
 }
 
 const app = document.getElementById('app')
@@ -48,8 +51,16 @@ function isoDate(offset) {
   return `${y}-${m}-${day}`
 }
 
+function getMoviePoster(movie, size = 'w342') {
+  if (movie.poster_url) return movie.poster_url
+  return getPosterUrl(movie.poster_path, size)
+}
+
 function getMovieSessionsFromHome(movie) {
-  return movie._hoytsSessions ? [movie._hoytsSessions] : null
+  const sessions = []
+  if (movie._hoytsSessions)   sessions.push(movie._hoytsSessions)
+  if (movie._villageSessions) sessions.push(movie._villageSessions)
+  return sessions.length ? sessions : null
 }
 
 // ---- ICONS ----
@@ -63,7 +74,6 @@ const ICON_TICKET = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none"
 // ---- RENDER: HOME ----
 
 function renderHome() {
-  const hasCinemas = store.getHoytsCinemaIds().length > 0
   return `
     <header class="header">
       <h1 class="header-title">KidFlicks</h1>
@@ -73,7 +83,7 @@ function renderHome() {
       </div>
     </header>
 
-    ${!hasCinemas ? `
+    ${!store.hasAnyCinema() ? `
       <div class="location-prompt">
         Select your cinemas in
         <button class="text-link" id="open-settings-loc">Settings</button>
@@ -83,12 +93,10 @@ function renderHome() {
 
     <div class="date-tabs">
       <button class="date-tab ${state.selectedDate === 'today' ? 'active' : ''}" data-date="today">
-        Today
-        <span class="date-sub">${dateLabel(0)}</span>
+        Today <span class="date-sub">${dateLabel(0)}</span>
       </button>
       <button class="date-tab ${state.selectedDate === 'tomorrow' ? 'active' : ''}" data-date="tomorrow">
-        Tomorrow
-        <span class="date-sub">${dateLabel(1)}</span>
+        Tomorrow <span class="date-sub">${dateLabel(1)}</span>
       </button>
     </div>
     ${renderMovieList()}
@@ -117,7 +125,7 @@ function renderMovieList() {
       </div>`
   }
 
-  const hasSessions = state.movies.some(m => m._hoytsSessions)
+  const hasSessions = state.movies.some(m => m._hoytsSessions || m._villageSessions)
   const note = hasSessions
     ? `Showing sessions at your selected cinemas`
     : `Showing G &amp; PG rated movies &mdash; tap for session times`
@@ -131,21 +139,21 @@ function renderMovieList() {
 }
 
 function renderMovieCard(movie, movieSessions) {
-  const poster = getPosterUrl(movie.poster_path, 'w342')
+  const poster = getMoviePoster(movie, 'w342')
 
   let sessionsHtml = ''
   if (movieSessions && movieSessions.length > 0) {
     sessionsHtml = movieSessions.map(s => {
-      const cinema = CINEMAS.find(c => c.id === s.chain)
-      if (!cinema) return ''
+      const chain = CINEMAS.find(c => c.id === s.chain)
+      if (!chain) return ''
       const allTimes = s.locations.flatMap(loc => loc.times)
-      if (allTimes.length === 0) return ''
+      if (!allTimes.length) return ''
       const MAX = 4
       const shown = allTimes.slice(0, MAX)
       const extra = allTimes.length - MAX
       return `
         <div class="card-sessions">
-          <span class="cinema-abbr-sm" style="background:${cinema.color}">${esc(cinema.abbr)}</span>
+          <span class="cinema-abbr-sm" style="background:${chain.color}">${esc(chain.abbr)}</span>
           <span class="card-times">
             ${shown.map(t => `<span class="card-time">${esc(t.time)}</span>`).join('')}
             ${extra > 0 ? `<span class="card-time-more">+${extra}</span>` : ''}
@@ -158,7 +166,7 @@ function renderMovieCard(movie, movieSessions) {
     <button class="movie-card" data-id="${movie.id}" aria-label="${esc(movie.title)}">
       <div class="movie-poster">
         ${poster
-          ? `<img src="${poster}" alt="" loading="lazy" />`
+          ? `<img src="${esc(poster)}" alt="" loading="lazy" />`
           : `<div class="poster-placeholder"><span>${esc(movie.title.charAt(0))}</span></div>`
         }
       </div>
@@ -179,13 +187,12 @@ function renderDetail() {
   const dateOffset = state.selectedDate === 'today' ? 0 : 1
   const dateText = dateLabel(dateOffset)
 
-  const poster = getPosterUrl(movie.poster_path, 'w500')
+  const poster = getMoviePoster(movie, 'w500')
   const cert = detail?.au_certification || movie.au_certification || ''
   const runtime = detail?.runtime
     ? `${Math.floor(detail.runtime / 60)}h ${detail.runtime % 60}m`
     : ''
   const overview = detail?.overview || movie.overview || ''
-  const hasCinemas = store.getHoytsCinemaIds().length > 0
 
   return `
     <div class="detail-view">
@@ -193,7 +200,7 @@ function renderDetail() {
 
       <div class="detail-hero">
         ${poster
-          ? `<img class="detail-poster" src="${poster}" alt="${esc(movie.title)}" />`
+          ? `<img class="detail-poster" src="${esc(poster)}" alt="${esc(movie.title)}" />`
           : `<div class="detail-poster-ph"><span>${esc(movie.title.charAt(0))}</span></div>`
         }
         <div class="detail-fade"></div>
@@ -203,21 +210,18 @@ function renderDetail() {
         <div class="detail-chips">
           ${cert ? `<span class="cert-badge">${esc(cert)}</span>` : ''}
           ${movie.release_date ? `<span class="chip">${movie.release_date.slice(0, 4)}</span>` : ''}
-          ${state.detailLoading
-            ? `<span class="chip muted">Loading...</span>`
+          ${state.detailLoading ? `<span class="chip muted">Loading...</span>`
             : runtime ? `<span class="chip">${runtime}</span>` : ''}
         </div>
 
         <h2 class="detail-title">${esc(movie.title)}</h2>
-
         ${overview ? `<p class="detail-overview">${esc(overview)}</p>` : ''}
 
         <div class="sessions-section">
           <h3 class="sessions-heading">Sessions &mdash; ${esc(dateText)}</h3>
-
-          ${!hasCinemas
+          ${!store.hasAnyCinema()
             ? `<p class="muted small">Select your cinemas in <button class="text-link" id="go-settings-loc">Settings</button> to see session times.</p>`
-            : renderSessionsBlock(movie)
+            : renderSessionsBlock()
           }
         </div>
       </div>
@@ -225,67 +229,71 @@ function renderDetail() {
   `
 }
 
-function renderSessionsBlock(movie) {
+function renderSessionsBlock() {
   if (state.sessionsLoading) {
     return `<div class="sessions-loading"><div class="spinner sm"></div><span>Looking up session times...</span></div>`
   }
 
   const sessions = state.sessions
   if (!sessions) {
-    return `<a href="${esc('https://www.hoyts.com.au')}" target="_blank" rel="noopener noreferrer" class="cinema-link" style="--cc:#e8002d">
-      <span class="cinema-abbr" style="background:#e8002d">H</span>
-      <span class="cinema-name">Hoyts</span>
-      ${ICON_EXTERNAL}
-    </a>`
+    return `<p class="muted small">No session data available.</p>`
   }
 
   const hoytsSessions = sessions.hoyts || []
-  if (hoytsSessions.length === 0) {
+  const villageSessions = sessions.village || []
+
+  if (!hoytsSessions.length && !villageSessions.length) {
     return `<p class="muted small">No sessions found at your selected cinemas for this day.</p>`
   }
 
-  return hoytsSessions.map(loc => {
-    const cinemaName = state.cinemaList?.find(c => c.id === loc.cinema)?.name || loc.cinema
+  function renderGroup(loc, color, abbr, cinemaDisplayName) {
     return `
-    <div class="session-group" style="--cc:#e8002d">
-      <div class="session-cinema-name">
-        <span class="cinema-abbr-sm" style="background:#e8002d">H</span>
-        ${esc(cinemaName)}
-      </div>
-      <div class="session-times">
-        ${loc.times.map(t => `
-          <a href="${esc(t.bookingUrl)}" target="_blank" rel="noopener noreferrer" class="session-time-btn">
-            ${ICON_TICKET}
-            ${esc(t.time)}
-          </a>
-        `).join('')}
-      </div>
-    </div>
-  `
+      <div class="session-group">
+        <div class="session-cinema-name">
+          <span class="cinema-abbr-sm" style="background:${color}">${abbr}</span>
+          ${esc(cinemaDisplayName)}
+        </div>
+        <div class="session-times">
+          ${loc.times.map(t => `
+            <a href="${esc(t.bookingUrl)}" target="_blank" rel="noopener noreferrer" class="session-time-btn">
+              ${ICON_TICKET}${esc(t.time)}
+            </a>
+          `).join('')}
+        </div>
+      </div>`
+  }
+
+  const hoytsHtml = hoytsSessions.map(loc => {
+    const name = state.hoytsCinemaList?.find(c => c.id === loc.cinema)?.name || loc.cinema
+    return renderGroup(loc, '#e8002d', 'H', name)
   }).join('')
+
+  const villageHtml = villageSessions.map(loc =>
+    renderGroup(loc, '#7b2d8b', 'V', loc.cinema)
+  ).join('')
+
+  return hoytsHtml + villageHtml
 }
 
 // ---- RENDER: SETTINGS ----
 
-function renderSettings() {
-  const selectedIds = store.getHoytsCinemaIds()
-
-  let cinemaPickerHtml
-  if (state.cinemaListLoading) {
-    cinemaPickerHtml = `<div class="loading-sm"><div class="spinner sm"></div> Loading cinemas&hellip;</div>`
-  } else if (state.cinemaListError || !state.cinemaList) {
-    cinemaPickerHtml = `<p class="muted small">Could not load cinema list. <button class="text-link" id="retry-cinemas-btn">Retry</button></p>`
+function cinemaPickerSection(title, list, loading, error, selectedIds, checkboxClass, retryId) {
+  let body
+  if (loading) {
+    body = `<div class="loading-sm"><div class="spinner sm"></div> Loading cinemas&hellip;</div>`
+  } else if (error || !list) {
+    body = `<p class="muted small">Could not load cinema list. <button class="text-link" id="${retryId}">Retry</button></p>`
   } else {
-    cinemaPickerHtml = `
+    body = `
       <div class="toggle-list">
-        ${state.cinemaList.map(c => `
-          <label class="toggle-row" for="hcinema-${esc(c.id)}">
+        ${list.map(c => `
+          <label class="toggle-row" for="${checkboxClass}-${esc(c.id)}">
             <div class="toggle-label">
               <span>${esc(c.name)}</span>
               ${c.suburb ? `<span class="cinema-suburb muted">${esc(c.suburb)}</span>` : ''}
             </div>
             <div class="switch">
-              <input type="checkbox" id="hcinema-${esc(c.id)}" class="hoyts-cinema-toggle"
+              <input type="checkbox" id="${checkboxClass}-${esc(c.id)}" class="${checkboxClass}"
                 data-id="${esc(c.id)}" ${selectedIds.includes(c.id) ? 'checked' : ''} />
               <span class="slider"></span>
             </div>
@@ -293,7 +301,14 @@ function renderSettings() {
         `).join('')}
       </div>`
   }
+  return `
+    <section class="settings-section">
+      <h2 class="settings-heading">${title}</h2>
+      ${body}
+    </section>`
+}
 
+function renderSettings() {
   return `
     <div class="settings-view">
       <header class="header">
@@ -301,13 +316,17 @@ function renderSettings() {
         <h1 class="header-title">Settings</h1>
         <div class="header-spacer"></div>
       </header>
-
       <div class="settings-body">
-        <section class="settings-section">
-          <h2 class="settings-heading">Your Cinemas</h2>
-          <p class="muted small">Select the Hoyts cinemas near you. Sessions and posters will show for movies playing at your chosen locations.</p>
-          ${cinemaPickerHtml}
-        </section>
+        ${cinemaPickerSection(
+          'Hoyts Cinemas', state.hoytsCinemaList,
+          state.hoytsCinemaListLoading, state.hoytsCinemaListError,
+          store.getHoytsCinemaIds(), 'hoyts-cinema-toggle', 'retry-hoyts-btn'
+        )}
+        ${cinemaPickerSection(
+          'Village Cinemas', state.villageCinemaList,
+          state.villageCinemaListLoading, state.villageCinemaListError,
+          store.getVillageCinemaIds(), 'village-cinema-toggle', 'retry-village-btn'
+        )}
       </div>
     </div>
   `
@@ -333,7 +352,8 @@ function render() {
 function openSettings() {
   state.view = 'settings'
   render()
-  if (!state.cinemaList && !state.cinemaListLoading) loadCinemaList()
+  if (!state.hoytsCinemaList  && !state.hoytsCinemaListLoading)  loadHoytsCinemaList()
+  if (!state.villageCinemaList && !state.villageCinemaListLoading) loadVillageCinemaList()
 }
 
 function attachHomeListeners() {
@@ -360,17 +380,17 @@ function attachHomeListeners() {
       state.detailLoading = true
       window.scrollTo(0, 0)
 
-      const homeData = getMovieSessionsFromHome(state.selectedMovie)
-      if (homeData) {
-        const detail = { hoyts: [], event: [], village: [], reading: [] }
-        for (const s of homeData) {
+      const homeSessions = getMovieSessionsFromHome(state.selectedMovie)
+      if (homeSessions) {
+        const detail = { hoyts: [], village: [] }
+        for (const s of homeSessions) {
           if (detail[s.chain] !== undefined) detail[s.chain].push(...s.locations)
         }
         state.sessions = detail
         state.sessionsLoading = false
       } else {
         state.sessions = null
-        state.sessionsLoading = store.getHoytsCinemaIds().length > 0
+        state.sessionsLoading = store.hasAnyCinema()
       }
 
       render()
@@ -385,35 +405,26 @@ function attachDetailListeners() {
     state.view = 'home'; window.scrollTo(0, 0); render()
   })
   document.getElementById('go-settings-loc')?.addEventListener('click', openSettings)
-  document.getElementById('go-settings')?.addEventListener('click', openSettings)
 }
 
 function attachSettingsListeners() {
   document.getElementById('settings-back-btn')?.addEventListener('click', () => {
-    state.view = 'home'
-    render()
-    // Reload movies if cinema selection changed
-    loadMovies()
+    state.view = 'home'; render(); loadMovies()
   })
+  document.getElementById('retry-hoyts-btn')?.addEventListener('click', () => loadHoytsCinemaList())
+  document.getElementById('retry-village-btn')?.addEventListener('click', () => loadVillageCinemaList())
 
-  document.getElementById('retry-cinemas-btn')?.addEventListener('click', () => loadCinemaList())
-
-  document.querySelectorAll('.hoyts-cinema-toggle').forEach(toggle => {
-    toggle.addEventListener('change', () => store.toggleHoytsCinema(toggle.dataset.id))
+  document.querySelectorAll('.hoyts-cinema-toggle').forEach(t => {
+    t.addEventListener('change', () => store.toggleHoytsCinema(t.dataset.id))
   })
-}
-
-function showFeedback(id, msg, ok) {
-  const el = document.getElementById(id)
-  if (!el) return
-  el.textContent = msg
-  el.className = `feedback ${ok ? 'ok' : 'err'}`
-  setTimeout(() => { el.className = 'feedback hidden' }, 2500)
+  document.querySelectorAll('.village-cinema-toggle').forEach(t => {
+    t.addEventListener('change', () => store.toggleVillageCinema(t.dataset.id))
+  })
 }
 
 // ---- DATA LOADING ----
 
-const ALLOWED_HOYTS_RATINGS = new Set(['g', 'pg'])
+const ALLOWED_RATINGS = new Set(['g', 'pg'])
 
 async function loadMovies() {
   state.loading = true
@@ -422,29 +433,51 @@ async function loadMovies() {
   if (state.view === 'home') render()
 
   try {
-    const cinemaIds = store.getHoytsCinemaIds()
+    const hoytsCinemaIds  = store.getHoytsCinemaIds()
+    const villageCinemaIds = store.getVillageCinemaIds()
 
-    if (cinemaIds.length === 0 || import.meta.env.DEV) {
-      // No cinemas selected or local dev: fall back to TMDB Family/Animation list
+    if (!store.hasAnyCinema() || import.meta.env.DEV) {
       state.movies = await getNowPlayingKidsMovies()
     } else {
       const dateOffset = state.selectedDate === 'today' ? 0 : 1
       const date = isoDate(dateOffset)
 
-      const res = await fetch(`/api/sessions?${new URLSearchParams({ date, hoytsCinemaIds: cinemaIds.join(',') })}`)
+      const params = new URLSearchParams({ date })
+      if (hoytsCinemaIds.length)  params.set('hoytsCinemaIds',  hoytsCinemaIds.join(','))
+      if (villageCinemaIds.length) params.set('villageCinemaIds', villageCinemaIds.join(','))
+
+      const res = await fetch(`/api/sessions?${params}`)
       if (!res.ok) throw new Error('Could not load cinema sessions')
       const data = await res.json()
 
-      // Filter by Hoyts' own rating first (G/PG only), then enrich with TMDB for poster/overview.
-      const enriched = await Promise.all((data.byMovie || []).map(async m => {
-        const rating = (m.rating || '').toLowerCase()
-        if (!ALLOWED_HOYTS_RATINGS.has(rating)) return null
+      // Merge by title across chains, filter to G/PG using chain-provided rating
+      const titleMap = {}
+      for (const m of (data.byMovie || [])) {
+        const key = (m.name || '').toLowerCase().trim()
+        if (!titleMap[key]) titleMap[key] = { name: m.name, rating: '', hoyts: null, village: null }
+        if (m.chain === 'hoyts')   titleMap[key].hoyts   = m
+        if (m.chain === 'village') titleMap[key].village  = m
+        if (m.rating && !titleMap[key].rating) titleMap[key].rating = m.rating
+      }
 
-        const tmdb = await searchAndEnrichFromTMDB(m.name)
-        if (tmdb) return { ...tmdb, _hoytsSessions: m }
-        // In TMDB yet: show with Hoyts data only
-        return { id: m.vistaId, title: m.name, poster_path: null, overview: '', release_date: '', au_certification: m.rating || '', _hoytsSessions: m }
-      }))
+      const enriched = await Promise.all(
+        Object.values(titleMap).map(async ({ name, rating, hoyts, village }) => {
+          if (!ALLOWED_RATINGS.has(rating.toLowerCase())) return null
+
+          const tmdb = await searchAndEnrichFromTMDB(name)
+          const base = tmdb || {
+            id: village?.hoCode || hoyts?.vistaId || name,
+            title: name,
+            poster_path: null,
+            poster_url: village?.posterUrl || null,
+            overview: '',
+            release_date: '',
+            au_certification: rating,
+          }
+
+          return { ...base, _hoytsSessions: hoyts || null, _villageSessions: village || null }
+        })
+      )
       state.movies = enriched.filter(Boolean)
     }
 
@@ -458,23 +491,39 @@ async function loadMovies() {
   if (state.view === 'home') render()
 }
 
-async function loadCinemaList() {
-  if (state.cinemaListLoading) return
-  state.cinemaListLoading = true
-  state.cinemaListError = false
+async function loadHoytsCinemaList() {
+  if (state.hoytsCinemaListLoading) return
+  state.hoytsCinemaListLoading = true
+  state.hoytsCinemaListError = false
   if (state.view === 'settings') render()
-
   try {
     const res = await fetch('/api/cinemas')
     if (!res.ok) throw new Error()
     const data = await res.json()
-    state.cinemaList = data.cinemas || []
+    state.hoytsCinemaList = data.cinemas || []
   } catch {
-    state.cinemaListError = true
-    state.cinemaList = null
+    state.hoytsCinemaListError = true
+    state.hoytsCinemaList = null
   }
+  state.hoytsCinemaListLoading = false
+  if (state.view === 'settings') render()
+}
 
-  state.cinemaListLoading = false
+async function loadVillageCinemaList() {
+  if (state.villageCinemaListLoading) return
+  state.villageCinemaListLoading = true
+  state.villageCinemaListError = false
+  if (state.view === 'settings') render()
+  try {
+    const res = await fetch('/api/village-cinemas')
+    if (!res.ok) throw new Error()
+    const data = await res.json()
+    state.villageCinemaList = data.cinemas || []
+  } catch {
+    state.villageCinemaListError = true
+    state.villageCinemaList = null
+  }
+  state.villageCinemaListLoading = false
   if (state.view === 'settings') render()
 }
 
@@ -493,26 +542,24 @@ async function loadMovieDetail(id) {
 }
 
 async function loadSessions(movie) {
-  if (import.meta.env.DEV) {
+  if (import.meta.env.DEV || !store.hasAnyCinema()) {
     state.sessionsLoading = false
     if (state.view === 'detail') render()
     return
   }
 
-  const cinemaIds = store.getHoytsCinemaIds()
-  if (cinemaIds.length === 0) return
-
+  const hoytsCinemaIds  = store.getHoytsCinemaIds()
+  const villageCinemaIds = store.getVillageCinemaIds()
   const dateOffset = state.selectedDate === 'today' ? 0 : 1
   const date = isoDate(dateOffset)
 
   try {
-    const params = new URLSearchParams({
-      movieTitle: movie.title,
-      date,
-      hoytsCinemaIds: cinemaIds.join(','),
-    })
+    const params = new URLSearchParams({ movieTitle: movie.title, date })
+    if (hoytsCinemaIds.length)  params.set('hoytsCinemaIds',  hoytsCinemaIds.join(','))
+    if (villageCinemaIds.length) params.set('villageCinemaIds', villageCinemaIds.join(','))
+
     const res = await fetch(`/api/sessions?${params}`)
-    if (!res.ok) throw new Error('fetch failed')
+    if (!res.ok) throw new Error()
     const data = await res.json()
 
     if (state.selectedMovie?.id === movie.id) {

@@ -7,6 +7,114 @@ const HOYTS_HEADERS = {
     'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
 }
 
+const VILLAGE_BASE = 'https://villagecinemas.com.au'
+const VILLAGE_HEADERS = {
+  Accept: 'application/json',
+  Origin: 'https://villagecinemas.com.au',
+  Referer: 'https://villagecinemas.com.au/',
+  'User-Agent':
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+}
+
+function formatVillageTime(isoString) {
+  // Showtime is already in AU local time e.g. "2026-06-21T09:30:00.000000+10:00"
+  if (!isoString) return ''
+  const timePart = isoString.split('T')[1] || ''
+  const [h, m] = timePart.split(':').map(Number)
+  const period = h >= 12 ? 'PM' : 'AM'
+  const hour = h % 12 || 12
+  return `${hour}:${String(m).padStart(2, '0')} ${period}`
+}
+
+async function fetchVillageHits(cinemaId, date) {
+  const params = new URLSearchParams({ 'f.c': cinemaId })
+  if (date) params.set('f.d', date)
+  const r = await fetch(`${VILLAGE_BASE}/api/algolia/sessions/hits?${params}`, { headers: VILLAGE_HEADERS })
+  if (!r.ok) return []
+  const d = await r.json()
+  const hits = d.hits || []
+  // Filter by date client-side as fallback in case f.d isn't supported
+  return date ? hits.filter(h => h.date === date) : hits
+}
+
+async function fetchAllVillageSessions(date, cinemaIds) {
+  try {
+    const allHits = (await Promise.all(cinemaIds.map(id => fetchVillageHits(id, date)))).flat()
+    if (!allHits.length) return []
+
+    const movieMap = {}
+    for (const hit of allHits) {
+      const hoCode = hit.movie?.movieHoCode
+      if (!hoCode) continue
+      if (!movieMap[hoCode]) {
+        movieMap[hoCode] = {
+          name: hit.movie.title,
+          hoCode,
+          rating: (hit.movie.classification?.description || '').trim(),
+          posterUrl: hit.movie.poster?.image?.url || null,
+          chain: 'village',
+          locMap: {},
+        }
+      }
+      const key = hit.cinema.cinemaId
+      if (!movieMap[hoCode].locMap[key]) {
+        movieMap[hoCode].locMap[key] = { cinema: hit.cinema.name, times: [] }
+      }
+      movieMap[hoCode].locMap[key].times.push({
+        time: formatVillageTime(hit.showtime),
+        bookingUrl: `${VILLAGE_BASE}/sessions/${hit.sessionId}`,
+        _iso: hit.showtime,
+      })
+    }
+
+    return Object.values(movieMap).map(m => ({
+      name: m.name,
+      hoCode: m.hoCode,
+      rating: m.rating,
+      posterUrl: m.posterUrl,
+      chain: 'village',
+      locations: Object.values(m.locMap).map(loc => ({
+        cinema: loc.cinema,
+        times: loc.times
+          .sort((a, b) => a._iso.localeCompare(b._iso))
+          .map(({ time, bookingUrl }) => ({ time, bookingUrl })),
+      })),
+    }))
+  } catch (err) {
+    console.error('Village all-sessions error:', err)
+    return []
+  }
+}
+
+async function fetchVillageSessions(movieTitle, date, cinemaIds) {
+  try {
+    const allHits = (await Promise.all(cinemaIds.map(id => fetchVillageHits(id, date)))).flat()
+    const matching = allHits.filter(h => titlesMatch(h.movie?.title, movieTitle))
+    if (!matching.length) return []
+
+    const locMap = {}
+    for (const hit of matching) {
+      const key = hit.cinema.cinemaId
+      if (!locMap[key]) locMap[key] = { cinema: hit.cinema.name, times: [] }
+      locMap[key].times.push({
+        time: formatVillageTime(hit.showtime),
+        bookingUrl: `${VILLAGE_BASE}/sessions/${hit.sessionId}`,
+        _iso: hit.showtime,
+      })
+    }
+
+    return Object.values(locMap).map(loc => ({
+      cinema: loc.cinema,
+      times: loc.times
+        .sort((a, b) => a._iso.localeCompare(b._iso))
+        .map(({ time, bookingUrl }) => ({ time, bookingUrl })),
+    }))
+  } catch (err) {
+    console.error('Village sessions error:', err)
+    return []
+  }
+}
+
 // vistaId can be a comma-separated list e.g. "HO00008574,HO00011215"
 function getMovieIds(movie) {
   const raw = movie.vistaId || ''
@@ -186,13 +294,17 @@ async function fetchAllHoytsSessions(date, cinemaIds) {
 }
 
 export default async function handler(req, res) {
-  const { movieTitle, date, hoytsCinemaIds, debug } = req.query
+  const { movieTitle, date, hoytsCinemaIds, villageCinemaIds, debug } = req.query
 
-  if (!hoytsCinemaIds) {
-    return res.status(400).json({ error: 'hoytsCinemaIds is required' })
+  const hoytsCodes  = hoytsCinemaIds  ? hoytsCinemaIds.split(',').filter(Boolean)  : []
+  const villageCodes = villageCinemaIds ? villageCinemaIds.split(',').filter(Boolean) : []
+
+  if (!hoytsCodes.length && !villageCodes.length) {
+    return res.status(400).json({ error: 'At least one of hoytsCinemaIds or villageCinemaIds is required' })
   }
 
-  const cinemaIds = hoytsCinemaIds.split(',').filter(Boolean)
+  // Legacy: cinemaIds for debug endpoints defaults to hoyts codes
+  const cinemaIds = hoytsCodes
 
   res.setHeader('Cache-Control', 'no-store')
 
@@ -258,11 +370,16 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600')
 
   if (movieTitle) {
-    const results = { hoyts: [], event: [], village: [], reading: [] }
-    results.hoyts = await fetchHoytsSessions(movieTitle, date, cinemaIds)
-    return res.json({ sessions: results, date })
+    const [hoytsSessions, villageSessions] = await Promise.all([
+      hoytsCodes.length  ? fetchHoytsSessions(movieTitle, date, hoytsCodes)   : Promise.resolve([]),
+      villageCodes.length ? fetchVillageSessions(movieTitle, date, villageCodes) : Promise.resolve([]),
+    ])
+    return res.json({ sessions: { hoyts: hoytsSessions, village: villageSessions }, date })
   }
 
-  const byMovie = await fetchAllHoytsSessions(date, cinemaIds)
-  return res.json({ byMovie, date })
+  const [hoytsByMovie, villageByMovie] = await Promise.all([
+    hoytsCodes.length  ? fetchAllHoytsSessions(date, hoytsCodes)   : Promise.resolve([]),
+    villageCodes.length ? fetchAllVillageSessions(date, villageCodes) : Promise.resolve([]),
+  ])
+  return res.json({ byMovie: [...hoytsByMovie, ...villageByMovie], date })
 }

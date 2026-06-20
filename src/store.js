@@ -1,27 +1,38 @@
 const KEYS = {
-  HOYTS_CINEMA_IDS: 'kidflicks_hoyts_cinemas',
+  HOYTS_CINEMA_IDS:   'kidflicks_hoyts_cinemas',
+  VILLAGE_CINEMA_IDS: 'kidflicks_village_cinemas',
 }
 
+function makeChainStore(key) {
+  return {
+    getIds()        { const s = localStorage.getItem(key); return s ? JSON.parse(s) : [] },
+    setIds(ids)     { localStorage.setItem(key, JSON.stringify(ids.map(String))) },
+    toggle(id)      {
+      const ids = this.getIds()
+      const sid = String(id)
+      const i = ids.indexOf(sid)
+      if (i >= 0) ids.splice(i, 1); else ids.push(sid)
+      this.setIds(ids)
+    },
+    isSelected(id)  { return this.getIds().includes(String(id)) },
+  }
+}
+
+const hoyts  = makeChainStore(KEYS.HOYTS_CINEMA_IDS)
+const village = makeChainStore(KEYS.VILLAGE_CINEMA_IDS)
+
 export const store = {
-  getHoytsCinemaIds() {
-    const stored = localStorage.getItem(KEYS.HOYTS_CINEMA_IDS)
-    return stored ? JSON.parse(stored) : []
-  },
+  getHoytsCinemaIds:      ()   => hoyts.getIds(),
+  setHoytsCinemaIds:      (ids) => hoyts.setIds(ids),
+  toggleHoytsCinema:      (id)  => hoyts.toggle(id),
+  isHoytsCinemaSelected:  (id)  => hoyts.isSelected(id),
 
-  setHoytsCinemaIds(ids) {
-    localStorage.setItem(KEYS.HOYTS_CINEMA_IDS, JSON.stringify(ids.map(String)))
-  },
+  getVillageCinemaIds:    ()   => village.getIds(),
+  setVillageCinemaIds:    (ids) => village.setIds(ids),
+  toggleVillageCinema:    (id)  => village.toggle(id),
+  isVillageCinemaSelected:(id)  => village.isSelected(id),
 
-  toggleHoytsCinema(id) {
-    const ids = this.getHoytsCinemaIds()
-    const sid = String(id)
-    const idx = ids.indexOf(sid)
-    if (idx >= 0) ids.splice(idx, 1)
-    else ids.push(sid)
-    this.setHoytsCinemaIds(ids)
-  },
-
-  isHoytsCinemaSelected(id) {
-    return this.getHoytsCinemaIds().includes(String(id))
+  hasAnyCinema() {
+    return hoyts.getIds().length > 0 || village.getIds().length > 0
   },
 }

@@ -200,6 +200,21 @@ export default async function handler(req, res) {
     }))
   }
 
+  // Check the filters endpoint — may have different sessions to /sessions/CODE
+  if (debug === 'filters') {
+    const slug = (cinemaIds[0] || '').toLowerCase()
+    const url = `${HOYTS_BASE}/sessions/filters/cinema:${slug}`
+    const r = await fetch(url, { headers: HOYTS_HEADERS })
+    const text = await r.text()
+    res.setHeader('Content-Type', 'application/json')
+    return res.status(200).send(JSON.stringify({
+      status: r.status,
+      ok: r.ok,
+      url,
+      responsePreview: text.slice(0, 3000),
+    }))
+  }
+
   if (debug === '1') {
     const data = await fetchHoytsData(cinemaIds)
     if (!data) return res.status(502).json({ error: 'Hoyts fetch failed' })

@@ -170,13 +170,36 @@ async function fetchAllHoytsSessions(date, cinemaIds) {
 }
 
 export default async function handler(req, res) {
-  const { movieTitle, date, hoytsCinemaIds } = req.query
+  const { movieTitle, date, hoytsCinemaIds, debug } = req.query
 
   if (!hoytsCinemaIds) {
     return res.status(400).json({ error: 'hoytsCinemaIds is required' })
   }
 
   const cinemaIds = hoytsCinemaIds.split(',').filter(Boolean)
+
+  res.setHeader('Cache-Control', 'no-store')
+
+  if (debug === '1') {
+    const data = await fetchHoytsData(cinemaIds)
+    if (!data) return res.status(502).json({ error: 'Hoyts fetch failed' })
+    const { cinemas, movies, sessions } = data
+    const cinemaIdSet = new Set(cinemas.map(c => String(c.id)))
+    const daySessions = sessions.filter(s =>
+      !s.disabled && cinemaIdSet.has(String(s.cinemaId)) &&
+      (!date || (s.date || '').substring(0, 10) === date)
+    )
+    const movieIdsWithSessions = new Set(daySessions.map(s => String(s.movieId)))
+    return res.json({
+      selectedCinemas: cinemas.map(c => ({ id: c.id, name: c.name })),
+      totalSessions: daySessions.length,
+      moviesWithSessions: movies
+        .filter(m => movieIdsWithSessions.has(String(m.vistaId || m.id)))
+        .map(m => ({ id: m.id, vistaId: m.vistaId, name: m.name, classification: m.classification })),
+      allMovieCount: movies.length,
+      sampleSession: daySessions[0] || null,
+    })
+  }
 
   res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600')
 

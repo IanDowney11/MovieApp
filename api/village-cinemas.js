@@ -1,21 +1,21 @@
 const VILLAGE_BASE = 'https://villagecinemas.com.au'
 
-function scraperUrl(targetUrl) {
-  const key = process.env.SCRAPERAPI_KEY
-  if (!key) throw new Error('SCRAPERAPI_KEY not configured')
-  return `https://api.scraperapi.com/?api_key=${key}&url=${encodeURIComponent(targetUrl)}&ultra_premium=true`
+function zenRowsUrl(targetUrl) {
+  const key = process.env.ZENROWS_API_KEY
+  if (!key) throw new Error('ZENROWS_API_KEY not configured')
+  return `https://api.zenrows.com/v1/?apikey=${key}&url=${encodeURIComponent(targetUrl)}&antibot=true`
 }
 
 export default async function handler(req, res) {
   const { debug } = req.query
 
-  if (!process.env.SCRAPERAPI_KEY) {
-    return res.status(503).json({ error: 'SCRAPERAPI_KEY environment variable not set' })
+  if (!process.env.ZENROWS_API_KEY) {
+    return res.status(503).json({ error: 'ZENROWS_API_KEY environment variable not set' })
   }
 
   let r, text
   try {
-    r = await fetch(scraperUrl(`${VILLAGE_BASE}/api/booking-widget/filters`), {
+    r = await fetch(zenRowsUrl(`${VILLAGE_BASE}/api/booking-widget/filters`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: '{}',

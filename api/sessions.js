@@ -9,10 +9,10 @@ const HOYTS_HEADERS = {
 
 const VILLAGE_BASE = 'https://villagecinemas.com.au'
 
-function villageScraperUrl(targetUrl) {
-  const key = process.env.SCRAPERAPI_KEY
-  if (!key) throw new Error('SCRAPERAPI_KEY not configured')
-  return `https://api.scraperapi.com/?api_key=${key}&url=${encodeURIComponent(targetUrl)}&ultra_premium=true`
+function villageProxyUrl(targetUrl) {
+  const key = process.env.ZENROWS_API_KEY
+  if (!key) throw new Error('ZENROWS_API_KEY not configured')
+  return `https://api.zenrows.com/v1/?apikey=${key}&url=${encodeURIComponent(targetUrl)}&antibot=true`
 }
 
 function formatVillageTime(isoString) {
@@ -30,7 +30,7 @@ async function fetchVillageHits(cinemaId, date) {
   if (date) params.set('f.d', date)
   const targetUrl = `${VILLAGE_BASE}/api/algolia/sessions/hits?${params}`
   try {
-    const r = await fetch(villageScraperUrl(targetUrl))
+    const r = await fetch(villageProxyUrl(targetUrl))
     if (!r.ok) return []
     const d = await r.json()
     const hits = d.hits || []

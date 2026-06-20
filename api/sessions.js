@@ -167,7 +167,7 @@ async function fetchAllHoytsSessions(date, cinemaIds) {
       results.push({
         name: movie.name,
         vistaId: movieIds[0],
-        classification: movie.classification || '',
+        rating: movie.rating?.id || movie.classification || '',
         chain: 'hoyts',
         locations: Object.values(locMap).map(loc => ({
           cinema: loc.cinema,

@@ -413,8 +413,7 @@ function showFeedback(id, msg, ok) {
 
 // ---- DATA LOADING ----
 
-// Block adult classifications; allow G, PG, unrated/missing
-const BLOCKED_AU_CERTS = new Set(['m', 'ma15+', 'ma', 'r18+', 'r', 'x18+', 'rc'])
+const ALLOWED_HOYTS_RATINGS = new Set(['g', 'pg'])
 
 async function loadMovies() {
   state.loading = true
@@ -436,17 +435,15 @@ async function loadMovies() {
       if (!res.ok) throw new Error('Could not load cinema sessions')
       const data = await res.json()
 
-      // Enrich each Hoyts movie with TMDB metadata and filter out adult certs.
-      // If TMDB can't find the movie, still show it — new releases may not be in TMDB yet.
+      // Filter by Hoyts' own rating first (G/PG only), then enrich with TMDB for poster/overview.
       const enriched = await Promise.all((data.byMovie || []).map(async m => {
+        const rating = (m.rating || '').toLowerCase()
+        if (!ALLOWED_HOYTS_RATINGS.has(rating)) return null
+
         const tmdb = await searchAndEnrichFromTMDB(m.name)
-        if (tmdb) {
-          const cert = (tmdb.au_certification || '').toLowerCase()
-          if (BLOCKED_AU_CERTS.has(cert)) return null
-          return { ...tmdb, _hoytsSessions: m }
-        }
-        // Not in TMDB: show with Hoyts title only, no poster
-        return { id: m.vistaId, title: m.name, poster_path: null, overview: '', release_date: '', au_certification: '', _hoytsSessions: m }
+        if (tmdb) return { ...tmdb, _hoytsSessions: m }
+        // In TMDB yet: show with Hoyts data only
+        return { id: m.vistaId, title: m.name, poster_path: null, overview: '', release_date: '', au_certification: m.rating || '', _hoytsSessions: m }
       }))
       state.movies = enriched.filter(Boolean)
     }

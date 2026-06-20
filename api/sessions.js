@@ -35,46 +35,33 @@ function sortableTime(formatted) {
   return h * 60 + m
 }
 
-// Fetch raw Hoyts data using cinema-specific session endpoints (e.g. sessions/FRANKS).
-// The global /sessions endpoint is incomplete — it misses movies that cinema-specific ones include.
+// Fetch movies + per-cinema sessions. cinemaIds are the codes Hoyts uses (e.g. "FRANKS").
+// We skip fetching /cinemas here — it was causing the sessions call to fail under combined load.
 async function fetchHoytsData(cinemaIds) {
-  const idSet = new Set(cinemaIds.map(String))
-
-  const [cinemasRes, moviesRes] = await Promise.all([
-    fetch(`${HOYTS_BASE}/cinemas`, { headers: HOYTS_HEADERS }),
+  const [moviesRes, ...sessionResponses] = await Promise.all([
     fetch(`${HOYTS_BASE}/movies`, { headers: HOYTS_HEADERS }),
+    ...cinemaIds.map(code => fetch(`${HOYTS_BASE}/sessions/${code}`, { headers: HOYTS_HEADERS })),
   ])
-  if (!cinemasRes.ok || !moviesRes.ok) return null
 
-  const [cinemasData, moviesData] = await Promise.all([cinemasRes.json(), moviesRes.json()])
+  if (!moviesRes.ok) return null
 
-  const allCinemas = Array.isArray(cinemasData) ? cinemasData : (cinemasData.cinemas || [])
-  const movies     = Array.isArray(moviesData)  ? moviesData  : (moviesData.movies   || [])
-  const selectedCinemas = allCinemas.filter(c => idSet.has(String(c.id)))
-
-  if (selectedCinemas.length === 0) return { cinemas: [], movies, sessions: [] }
-
-  // Fetch sessions per cinema using the cinema-specific endpoint
-  const sessionResponses = await Promise.all(
-    selectedCinemas.map(c => {
-      const code = c.code || c.cinemaCode || c.shortCode || c.slug || String(c.id)
-      return fetch(`${HOYTS_BASE}/sessions/${code}`, { headers: HOYTS_HEADERS })
-    })
-  )
+  const moviesData = await moviesRes.json()
+  const movies = Array.isArray(moviesData) ? moviesData : (moviesData.movies || [])
 
   let allSessions = []
   for (let i = 0; i < sessionResponses.length; i++) {
     if (!sessionResponses[i].ok) continue
     const d = await sessionResponses[i].json()
     const cinemaSessions = Array.isArray(d) ? d : (d.sessions || [])
-    const cinemaId = String(selectedCinemas[i].id)
-    // Inject cinemaId so downstream filtering works regardless of what the endpoint returns
+    const cinemaId = cinemaIds[i]
     allSessions = allSessions.concat(
-      cinemaSessions.map(s => ({ ...s, cinemaId: s.cinemaId ?? cinemaId }))
+      cinemaSessions.map(s => ({ ...s, cinemaId: s.cinemaId || cinemaId }))
     )
   }
 
-  return { cinemas: selectedCinemas, movies, sessions: allSessions }
+  // Minimal stubs — cinema names are resolved in the UI from the cached /api/cinemas list
+  const cinemas = cinemaIds.map(id => ({ id }))
+  return { cinemas, movies, sessions: allSessions }
 }
 
 // Detail view: sessions for one specific movie at the selected cinemas.
@@ -231,7 +218,7 @@ export default async function handler(req, res) {
     const movieIdsWithSessions = new Set(filteredByDate.map(s => String(s.movieId)))
 
     return res.json({
-      selectedCinemas: cinemas.map(c => ({ id: c.id, name: c.name })),
+      selectedCinemas: cinemaIds,
       rawSessionCount: sessions.length,
       filteredSessionCount: filteredByDate.length,
       detectedDateKey: dateKey || null,

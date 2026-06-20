@@ -244,11 +244,13 @@ function renderSessionsBlock(movie) {
     return `<p class="muted small">No sessions found at your selected cinemas for this day.</p>`
   }
 
-  return hoytsSessions.map(loc => `
+  return hoytsSessions.map(loc => {
+    const cinemaName = state.cinemaList?.find(c => c.id === loc.cinema)?.name || loc.cinema
+    return `
     <div class="session-group" style="--cc:#e8002d">
       <div class="session-cinema-name">
         <span class="cinema-abbr-sm" style="background:#e8002d">H</span>
-        ${esc(loc.cinema)}
+        ${esc(cinemaName)}
       </div>
       <div class="session-times">
         ${loc.times.map(t => `
@@ -259,7 +261,8 @@ function renderSessionsBlock(movie) {
         `).join('')}
       </div>
     </div>
-  `).join('')
+  `
+  }).join('')
 }
 
 // ---- RENDER: SETTINGS ----

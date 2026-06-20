@@ -1,17 +1,49 @@
 const VILLAGE_BASE = 'https://villagecinemas.com.au'
-const VILLAGE_HEADERS = {
-  Accept: 'application/json',
-  Origin: 'https://villagecinemas.com.au',
-  Referer: 'https://villagecinemas.com.au/',
-  'User-Agent':
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-}
 
 export default async function handler(req, res) {
-  const r = await fetch(`${VILLAGE_BASE}/api/booking-widget/filters`, { headers: VILLAGE_HEADERS })
-  if (!r.ok) return res.status(502).json({ error: 'Failed to fetch Village cinemas' })
+  const { debug } = req.query
 
-  const data = await r.json()
+  // Try plain fetch first (some APIs block when Origin/Referer look like scrapers)
+  const headers = {
+    Accept: 'application/json, text/plain, */*',
+    'User-Agent':
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+  }
+
+  const url = `${VILLAGE_BASE}/api/booking-widget/filters`
+  let r
+  try {
+    r = await fetch(url, { headers })
+  } catch (err) {
+    return res.status(502).json({ error: 'Network error fetching Village cinemas', detail: String(err) })
+  }
+
+  if (debug === '1') {
+    const text = await r.text()
+    res.setHeader('Content-Type', 'application/json')
+    return res.status(200).send(JSON.stringify({
+      status: r.status,
+      ok: r.ok,
+      contentType: r.headers.get('content-type'),
+      bodyPreview: text.slice(0, 2000),
+    }))
+  }
+
+  if (!r.ok) {
+    return res.status(502).json({
+      error: 'Failed to fetch Village cinemas',
+      status: r.status,
+      contentType: r.headers.get('content-type'),
+    })
+  }
+
+  let data
+  try {
+    data = await r.json()
+  } catch {
+    return res.status(502).json({ error: 'Village API returned non-JSON response' })
+  }
+
   const victorian = (data.cinemas || [])
     .filter(c => c.state === 'VIC')
     .map(c => ({

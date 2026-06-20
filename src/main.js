@@ -6,6 +6,7 @@ import { getNowPlayingKidsMovies, getMovieDetails, getPosterUrl, searchAndEnrich
 
 const state = {
   view: 'home',
+  settingsTab: 'hoyts',
   selectedDate: 'today',
   movies: [],
   loading: false,
@@ -277,56 +278,75 @@ function renderSessionsBlock() {
 
 // ---- RENDER: SETTINGS ----
 
-function cinemaPickerSection(title, list, loading, error, selectedIds, checkboxClass, retryId) {
-  let body
+function cinemaPickerBody(list, loading, error, selectedIds, checkboxClass, retryId) {
   if (loading) {
-    body = `<div class="loading-sm"><div class="spinner sm"></div> Loading cinemas&hellip;</div>`
-  } else if (error || !list) {
-    body = `<p class="muted small">Could not load cinema list. <button class="text-link" id="${retryId}">Retry</button></p>`
-  } else {
-    body = `
-      <div class="toggle-list">
-        ${list.map(c => `
-          <label class="toggle-row" for="${checkboxClass}-${esc(c.id)}">
-            <div class="toggle-label">
-              <span>${esc(c.name)}</span>
-              ${c.suburb ? `<span class="cinema-suburb muted">${esc(c.suburb)}</span>` : ''}
-            </div>
-            <div class="switch">
-              <input type="checkbox" id="${checkboxClass}-${esc(c.id)}" class="${checkboxClass}"
-                data-id="${esc(c.id)}" ${selectedIds.includes(c.id) ? 'checked' : ''} />
-              <span class="slider"></span>
-            </div>
-          </label>
-        `).join('')}
-      </div>`
+    return `<div class="loading-sm"><div class="spinner sm"></div> Loading cinemas&hellip;</div>`
+  }
+  if (error || !list) {
+    return `<p class="muted small">Could not load cinema list. <button class="text-link" id="${retryId}">Retry</button></p>`
+  }
+  if (!list.length) {
+    return `<p class="muted small">No cinemas found.</p>`
   }
   return `
-    <section class="settings-section">
-      <h2 class="settings-heading">${title}</h2>
-      ${body}
-    </section>`
+    <div class="toggle-list">
+      ${list.map(c => `
+        <label class="toggle-row" for="${checkboxClass}-${esc(c.id)}">
+          <div class="toggle-label">
+            <span>${esc(c.name)}</span>
+            ${c.suburb ? `<span class="cinema-suburb muted">${esc(c.suburb)}</span>` : ''}
+          </div>
+          <div class="switch">
+            <input type="checkbox" id="${checkboxClass}-${esc(c.id)}" class="${checkboxClass}"
+              data-id="${esc(c.id)}" ${selectedIds.includes(String(c.id)) ? 'checked' : ''} />
+            <span class="slider"></span>
+          </div>
+        </label>
+      `).join('')}
+    </div>`
 }
 
 function renderSettings() {
+  const tab = state.settingsTab
+  const HOYTS_COLOR = '#e8002d'
+  const VILLAGE_COLOR = '#7b2d8b'
+
+  let tabContent
+  if (tab === 'hoyts') {
+    tabContent = cinemaPickerBody(
+      state.hoytsCinemaList, state.hoytsCinemaListLoading, state.hoytsCinemaListError,
+      store.getHoytsCinemaIds(), 'hoyts-cinema-toggle', 'retry-hoyts-btn'
+    )
+  } else {
+    tabContent = cinemaPickerBody(
+      state.villageCinemaList, state.villageCinemaListLoading, state.villageCinemaListError,
+      store.getVillageCinemaIds(), 'village-cinema-toggle', 'retry-village-btn'
+    )
+  }
+
   return `
     <div class="settings-view">
       <header class="header">
         <button class="icon-btn" id="settings-back-btn" aria-label="Back">${ICON_BACK}</button>
-        <h1 class="header-title">Settings</h1>
+        <h1 class="header-title">My Cinemas</h1>
         <div class="header-spacer"></div>
       </header>
+
+      <div class="chain-tabs">
+        <button class="chain-tab ${tab === 'hoyts' ? 'active' : ''}"
+          data-tab="hoyts" style="--cc:${HOYTS_COLOR}">
+          <span class="chain-dot" style="background:${HOYTS_COLOR}"></span>
+          Hoyts
+        </button>
+        <button class="chain-tab ${tab === 'village' ? 'active' : ''}"
+          data-tab="village" style="--cc:${VILLAGE_COLOR}">
+          <span class="chain-dot" style="background:${VILLAGE_COLOR}"></span>
+          Village
+        </button>
+      </div>
+
       <div class="settings-body">
-        ${cinemaPickerSection(
-          'Hoyts Cinemas', state.hoytsCinemaList,
-          state.hoytsCinemaListLoading, state.hoytsCinemaListError,
-          store.getHoytsCinemaIds(), 'hoyts-cinema-toggle', 'retry-hoyts-btn'
-        )}
-        ${cinemaPickerSection(
-          'Village Cinemas', state.villageCinemaList,
-          state.villageCinemaListLoading, state.villageCinemaListError,
-          store.getVillageCinemaIds(), 'village-cinema-toggle', 'retry-village-btn'
-        )}
+        ${tabContent}
       </div>
     </div>
   `
@@ -352,8 +372,12 @@ function render() {
 function openSettings() {
   state.view = 'settings'
   render()
-  if (!state.hoytsCinemaList  && !state.hoytsCinemaListLoading)  loadHoytsCinemaList()
-  if (!state.villageCinemaList && !state.villageCinemaListLoading) loadVillageCinemaList()
+  // Only load the active tab's list immediately; the other loads on tab switch
+  if (state.settingsTab === 'hoyts' && !state.hoytsCinemaList && !state.hoytsCinemaListLoading) {
+    loadHoytsCinemaList()
+  } else if (state.settingsTab === 'village' && !state.villageCinemaList && !state.villageCinemaListLoading) {
+    loadVillageCinemaList()
+  }
 }
 
 function attachHomeListeners() {
@@ -413,6 +437,21 @@ function attachSettingsListeners() {
   })
   document.getElementById('retry-hoyts-btn')?.addEventListener('click', () => loadHoytsCinemaList())
   document.getElementById('retry-village-btn')?.addEventListener('click', () => loadVillageCinemaList())
+
+  document.querySelectorAll('.chain-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (state.settingsTab === btn.dataset.tab) return
+      state.settingsTab = btn.dataset.tab
+      render()
+      // Load the newly-switched chain's list if not already loaded
+      if (state.settingsTab === 'village' && !state.villageCinemaList && !state.villageCinemaListLoading) {
+        loadVillageCinemaList()
+      }
+      if (state.settingsTab === 'hoyts' && !state.hoytsCinemaList && !state.hoytsCinemaListLoading) {
+        loadHoytsCinemaList()
+      }
+    })
+  })
 
   document.querySelectorAll('.hoyts-cinema-toggle').forEach(t => {
     t.addEventListener('change', () => store.toggleHoytsCinema(t.dataset.id))

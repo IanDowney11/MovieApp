@@ -148,7 +148,7 @@ function renderMovieList() {
     </div>
     <a href="https://www.dromanadrivein.com.au/" target="_blank" rel="noopener noreferrer" class="dromana-card">
       <span class="dromana-label">Also check out</span>
-      <img src="https://cdn.vwassets.com/dromanadrivein.com.au/1751016283978_DDIDinerLogo2.png" alt="Dromana Drive-In" class="dromana-logo" />
+      <img src="https://cdn.vwassets.com/dromanadrivein.com.au/1751016283978_DDIDinerLogo2.png" alt="Dromana Drive-In" class="dromana-logo" loading="lazy" />
     </a>
   `
 }

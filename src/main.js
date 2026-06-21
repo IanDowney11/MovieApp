@@ -146,12 +146,10 @@ function renderMovieList() {
     <div class="movie-grid">
       ${state.movies.map(m => renderMovieCard(m, getMovieSessionsFromHome(m))).join('')}
     </div>
-    <div class="also-check">
-      <span>Also check:</span>
-      <a href="https://www.dromanadrivein.com.au/" target="_blank" rel="noopener noreferrer" class="also-check-link">
-        Dromana Drive-In ${ICON_EXTERNAL}
-      </a>
-    </div>
+    <a href="https://www.dromanadrivein.com.au/" target="_blank" rel="noopener noreferrer" class="dromana-card">
+      <span class="dromana-label">Also check out</span>
+      <img src="https://cdn.vwassets.com/dromanadrivein.com.au/1751016283978_DDIDinerLogo2.png" alt="Dromana Drive-In" class="dromana-logo" />
+    </a>
   `
 }
 

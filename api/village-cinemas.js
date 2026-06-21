@@ -1,7 +1,6 @@
 const VILLAGE_BASE = 'https://villagecinemas.com.au'
 const VILLAGE_HEADERS = {
   Accept: 'application/json',
-  'Content-Type': 'application/json',
   'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
 }
 
@@ -10,8 +9,14 @@ export default async function handler(req, res) {
   try {
     r = await fetch(`${VILLAGE_BASE}/api/booking-widget/filters`, {
       method: 'POST',
-      headers: VILLAGE_HEADERS,
-      body: '{}',
+      headers: { ...VILLAGE_HEADERS, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        movieHoCodes: [],
+        experiences: [],
+        accessibility: [],
+        languages: [],
+        events: [],
+      }),
     })
     text = await r.text()
   } catch (err) {

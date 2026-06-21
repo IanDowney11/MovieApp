@@ -2,10 +2,15 @@
   "name": "kidflicks",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vercel dev",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
   },
   "devDependencies": {
     "vite": "^5.4.0"

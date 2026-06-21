@@ -475,7 +475,7 @@ async function loadMovies() {
     const hoytsCinemaIds  = store.getHoytsCinemaIds()
     const villageCinemaIds = store.getVillageCinemaIds()
 
-    if (!store.hasAnyCinema() || import.meta.env.DEV) {
+    if (!store.hasAnyCinema()) {
       state.movies = await getNowPlayingKidsMovies()
     } else {
       const dateOffset = state.selectedDate === 'today' ? 0 : 1
@@ -581,7 +581,7 @@ async function loadMovieDetail(id) {
 }
 
 async function loadSessions(movie) {
-  if (import.meta.env.DEV || !store.hasAnyCinema()) {
+  if (!store.hasAnyCinema()) {
     state.sessionsLoading = false
     if (state.view === 'detail') render()
     return

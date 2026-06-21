@@ -262,6 +262,28 @@ button { font-family: inherit; }
   margin: 0;
 }
 
+.also-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px 20px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.also-check-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.also-check-link:hover {
+  text-decoration: underline;
+}
+
 .movie-title {
   font-size: 12px;
   font-weight: 600;

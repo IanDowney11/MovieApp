@@ -146,6 +146,12 @@ function renderMovieList() {
     <div class="movie-grid">
       ${state.movies.map(m => renderMovieCard(m, getMovieSessionsFromHome(m))).join('')}
     </div>
+    <div class="also-check">
+      <span>Also check:</span>
+      <a href="https://www.dromanadrivein.com.au/" target="_blank" rel="noopener noreferrer" class="also-check-link">
+        Dromana Drive-In ${ICON_EXTERNAL}
+      </a>
+    </div>
   `
 }
 
@@ -654,3 +660,5 @@ if ('serviceWorker' in navigator) {
 state.loading = true
 render()
 loadMovies()
+// Load cinema list eagerly so home screen can resolve cinema names from session codes
+if (store.getHoytsCinemaIds().length > 0) loadHoytsCinemaList()

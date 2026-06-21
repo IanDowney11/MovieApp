@@ -59,9 +59,10 @@ async function fetchAllVillageSessions(date, cinemaIds) {
       if (!movieMap[hoCode].locMap[key]) {
         movieMap[hoCode].locMap[key] = { cinema: hit.cinema.name, times: [] }
       }
+      const movieSlug = (hit.movie.title || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
       movieMap[hoCode].locMap[key].times.push({
         time: formatVillageTime(hit.showtime),
-        bookingUrl: `${VILLAGE_BASE}/sessions/${hit.sessionId}`,
+        bookingUrl: `${VILLAGE_BASE}/movies/${movieSlug}`,
         _iso: hit.showtime,
       })
     }
@@ -95,9 +96,10 @@ async function fetchVillageSessions(movieTitle, date, cinemaIds) {
     for (const hit of matching) {
       const key = hit.cinema.cinemaId
       if (!locMap[key]) locMap[key] = { cinema: hit.cinema.name, times: [] }
+      const movieSlug = (hit.movie.title || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
       locMap[key].times.push({
         time: formatVillageTime(hit.showtime),
-        bookingUrl: `${VILLAGE_BASE}/sessions/${hit.sessionId}`,
+        bookingUrl: `${VILLAGE_BASE}/movies/${movieSlug}`,
         _iso: hit.showtime,
       })
     }

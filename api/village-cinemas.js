@@ -35,8 +35,8 @@ export default async function handler(req, res) {
   }
 
   const victorian = (data.cinemas || [])
-    .filter(c => c.state === 'VIC')
-    .map(c => ({ id: c.cinemaId, name: c.name, suburb: c.suburb }))
+    .filter(c => !/closed/i.test(c.name))
+    .map(c => ({ id: c.cinemaId || c.id, name: c.name, suburb: c.suburb }))
     .sort((a, b) => a.name.localeCompare(b.name))
 
   res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=7200')

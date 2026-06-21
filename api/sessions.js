@@ -8,11 +8,9 @@ const HOYTS_HEADERS = {
 }
 
 const VILLAGE_BASE = 'https://villagecinemas.com.au'
-
-function villageProxyUrl(targetUrl) {
-  const key = process.env.ZENROWS_API_KEY
-  if (!key) throw new Error('ZENROWS_API_KEY not configured')
-  return `https://api.zenrows.com/v1/?apikey=${key}&url=${encodeURIComponent(targetUrl)}&antibot=true`
+const VILLAGE_HEADERS = {
+  Accept: 'application/json',
+  'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
 }
 
 function formatVillageTime(isoString) {
@@ -30,7 +28,7 @@ async function fetchVillageHits(cinemaId, date) {
   if (date) params.set('f.d', date)
   const targetUrl = `${VILLAGE_BASE}/api/algolia/sessions/hits?${params}`
   try {
-    const r = await fetch(villageProxyUrl(targetUrl))
+    const r = await fetch(targetUrl, { headers: VILLAGE_HEADERS })
     if (!r.ok) return []
     const d = await r.json()
     const hits = d.hits || []

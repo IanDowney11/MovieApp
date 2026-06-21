@@ -1,48 +1,32 @@
 const VILLAGE_BASE = 'https://villagecinemas.com.au'
-
-function zenRowsUrl(targetUrl) {
-  const key = process.env.ZENROWS_API_KEY
-  if (!key) throw new Error('ZENROWS_API_KEY not configured')
-  return `https://api.zenrows.com/v1/?apikey=${key}&url=${encodeURIComponent(targetUrl)}&antibot=true`
+const VILLAGE_HEADERS = {
+  Accept: 'application/json',
+  'Content-Type': 'application/json',
+  'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
 }
 
 export default async function handler(req, res) {
-  const { debug } = req.query
-
-  if (!process.env.ZENROWS_API_KEY) {
-    return res.status(503).json({ error: 'ZENROWS_API_KEY environment variable not set' })
-  }
-
   let r, text
   try {
-    r = await fetch(zenRowsUrl(`${VILLAGE_BASE}/api/booking-widget/filters`), {
+    r = await fetch(`${VILLAGE_BASE}/api/booking-widget/filters`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: VILLAGE_HEADERS,
       body: '{}',
     })
     text = await r.text()
   } catch (err) {
-    return res.status(502).json({ error: 'Network error reaching ScraperAPI', detail: String(err) })
-  }
-
-  if (debug === '1') {
-    return res.status(200).json({
-      status: r.status,
-      ok: r.ok,
-      contentType: r.headers.get('content-type'),
-      bodyPreview: text.slice(0, 3000),
-    })
+    return res.status(502).json({ error: 'Failed to reach Village', detail: String(err) })
   }
 
   if (!r.ok) {
-    return res.status(502).json({ error: 'Village API error', status: r.status, bodyPreview: text.slice(0, 500) })
+    return res.status(502).json({ error: 'Village API error', status: r.status, body: text.slice(0, 300) })
   }
 
   let data
   try {
     data = JSON.parse(text)
   } catch {
-    return res.status(502).json({ error: 'Village API returned non-JSON', bodyPreview: text.slice(0, 500) })
+    return res.status(502).json({ error: 'Village returned non-JSON', body: text.slice(0, 300) })
   }
 
   const victorian = (data.cinemas || [])

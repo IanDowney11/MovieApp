@@ -64,6 +64,16 @@ function getMovieSessionsFromHome(movie) {
   return sessions.length ? sessions : null
 }
 
+function resolveCinemaName(chain, cinemaKey) {
+  if (chain === 'hoyts') {
+    const c = state.hoytsCinemaList?.find(c => c.id === cinemaKey || c.code === cinemaKey)
+    // Prefer suburb (short), else strip "Hoyts" prefix from name, else raw key
+    return c?.suburb || c?.name?.replace(/^hoyts\s*/i, '') || cinemaKey
+  }
+  // Village: cinemaKey is already the cinema name (e.g. "Karingal")
+  return cinemaKey
+}
+
 // ---- ICONS ----
 
 const ICON_SETTINGS = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`
@@ -144,23 +154,41 @@ function renderMovieCard(movie, movieSessions) {
 
   let sessionsHtml = ''
   if (movieSessions && movieSessions.length > 0) {
-    sessionsHtml = movieSessions.map(s => {
+    // Flatten to one row per cinema across all chains
+    const rows = movieSessions.flatMap(s => {
       const chain = CINEMAS.find(c => c.id === s.chain)
-      if (!chain) return ''
-      const allTimes = s.locations.flatMap(loc => loc.times)
-      if (!allTimes.length) return ''
-      const MAX = 4
-      const shown = allTimes.slice(0, MAX)
-      const extra = allTimes.length - MAX
-      return `
+      if (!chain) return []
+      return s.locations
+        .filter(loc => loc.times.length > 0)
+        .map(loc => ({
+          chain,
+          name: resolveCinemaName(s.chain, loc.cinema),
+          times: loc.times,
+        }))
+    })
+
+    const MAX_ROWS = 3
+    const shownRows = rows.slice(0, MAX_ROWS)
+    const extraRows = rows.length - MAX_ROWS
+
+    if (shownRows.length) {
+      sessionsHtml = `
         <div class="card-sessions">
-          <span class="cinema-abbr-sm" style="background:${chain.color}">${esc(chain.abbr)}</span>
-          <span class="card-times">
-            ${shown.map(t => `<span class="card-time">${esc(t.time)}</span>`).join('')}
-            ${extra > 0 ? `<span class="card-time-more">+${extra}</span>` : ''}
-          </span>
+          ${shownRows.map(row => `
+            <div class="card-loc">
+              <div class="card-loc-header">
+                <span class="cinema-dot" style="background:${row.chain.color}"></span>
+                <span class="card-loc-name">${esc(row.name)}</span>
+              </div>
+              <div class="card-times">
+                ${row.times.slice(0, 3).map(t => `<span class="card-time">${esc(t.time)}</span>`).join('')}
+                ${row.times.length > 3 ? `<span class="card-time-more">+${row.times.length - 3}</span>` : ''}
+              </div>
+            </div>
+          `).join('')}
+          ${extraRows > 0 ? `<p class="card-more-locs">+${extraRows} more cinema${extraRows > 1 ? 's' : ''}</p>` : ''}
         </div>`
-    }).join('')
+    }
   }
 
   return `
